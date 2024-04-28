@@ -1,0 +1,225 @@
+function [outbreak_size, outbreak_length] = run_sim(inf_const, playdates, meetings, printouts)
+if printouts
+    disp("START")
+end
+%we will enter this manually once we calculate the network
+%group_sizes(i) will give the # of dogs in the i-th group
+group_sizes = ones(1, 27);
+group_sizes(1) = 4;
+group_sizes(2) = 4;
+group_sizes(3) = 3;
+group_sizes(4) = 3;
+group_sizes(5) = 2;
+num_dogs = sum(group_sizes);
+num_groups = size(group_sizes, 2);
+inf_times = randi([14, 28], 1, num_dogs);
+latent_times = randi([7, 14], 1, num_dogs);
+
+
+%we will need the index of the first and last dog in each group
+first_indices_in_group = NaN(1, num_groups);
+last_indices_in_group = NaN(1, num_groups);
+
+start_index = 1;
+for this_group = 1:num_groups
+    first_indices_in_group(this_group) = start_index;
+    start_index = start_index + group_sizes(this_group);
+end
+
+for this_group = 1:num_groups
+    last_indices_in_group(this_group) = ...
+        first_indices_in_group(this_group) + group_sizes(this_group) - 1;
+end
+
+
+%create array of dog objects
+dogs = createArray(num_dogs, 1, "Dog");
+
+%add dogs to groups
+for this_group = 1:num_groups
+    start_index = first_indices_in_group(this_group);
+    end_index = last_indices_in_group(this_group);
+    for this_dog_index = start_index:end_index
+        dogs(this_dog_index).index = this_dog_index;
+        dogs(this_dog_index).group = this_group;
+    end
+end
+
+%make one dog infected
+infected_dog_index = randi(num_dogs);
+dogs(infected_dog_index).infection_status = 'I';
+
+
+%Run Simulation
+
+for day = 0:1000
+    
+    %draw from number of playdates distribution 
+    num_playdates = get_num_playdates();
+    
+    if printouts
+        disp("Day " + day);
+    end
+    %make an array of dogs already in playdates
+    dogs_already_playing = [];
+
+    if num_playdates ~= 0 && playdates
+        for playdate = 1:num_playdates
+            
+            %---------CONSTRUCT PLAYDATE GROUP-----------------------
+            
+            %draw from number of dogs per playdate distribution
+            num_dogs_in_playdate = get_num_dogs_in_playdate();
+    
+            %create array representing this playdate
+            playdate_dogs = [];
+    
+            %pick a random dog (not already playing) from the total pool and
+            %add it to dogs_already_playing and playdate_dogs
+            [first_dog_index, dogs_already_playing, playdate_dogs] = ...
+                grab_free_dog(1, num_dogs, dogs_already_playing, playdate_dogs);
+    
+    
+    
+            %find the group this dog belongs to
+            first_dog = dogs(first_dog_index);
+            playdate_group = first_dog.group;
+    
+            %figure out how many eligible dogs are left in this group
+            playdate_group_indices = ...
+                first_indices_in_group(playdate_group):last_indices_in_group(playdate_group);
+    
+            eligible_dogs_in_playdate_group = setdiff(playdate_group_indices, dogs_already_playing);
+            num_of_eligible_dogs_in_playdate_group = size(eligible_dogs_in_playdate_group, 2);
+    
+            %if there's not enough dogs in the group, then we will (later) need to
+            %grab the extras at random. 
+            %the -1's are because we already grabbed the first dog)
+    
+            if num_dogs_in_playdate - 1 > num_of_eligible_dogs_in_playdate_group
+                num_of_dogs_to_grab_from_group = num_of_eligible_dogs_in_playdate_group;
+            else 
+                num_of_dogs_to_grab_from_group = num_dogs_in_playdate - 1;
+            end
+    
+    
+            %grab "num_of_dogs_to_grab_from_group" dogs from this group 
+            first_index_in_group = first_indices_in_group(playdate_group);
+            last_index_in_group = last_indices_in_group(playdate_group);
+            
+            for i = 1:num_of_dogs_to_grab_from_group
+                [~, dogs_already_playing, playdate_dogs] = ...
+                    grab_free_dog(first_index_in_group, last_index_in_group, dogs_already_playing, playdate_dogs);
+            end
+    
+            %grab the additional dogs (from total pool) if necessary
+            num_of_additional_dogs = num_dogs_in_playdate - 1 - num_of_eligible_dogs_in_playdate_group;
+            if num_of_additional_dogs > 0
+                for i = 1:num_of_additional_dogs
+                    [~, dogs_already_playing, playdate_dogs] = ...
+                        grab_free_dog(1, num_dogs, dogs_already_playing, playdate_dogs);
+                end
+            end
+    
+    
+    
+            %----------------PLAYDATE INFECTION EVENTS-------------------
+    
+            %get proportion of infected dogs
+            playdate_inf_prop = get_infected_proportion(playdate_dogs, dogs);
+            if printouts
+                disp("Playdate " + playdate + ": Infected Proportion = " + playdate_inf_prop)
+            end
+            
+            %see if each susceptible dog gets infected
+            dogs = do_infections(dogs, playdate_dogs, inf_const, playdate_inf_prop, printouts);
+        end
+    end
+
+    %---------------MEETUPS-----------------------------
+    if mod(day, 7) == 0 && meetings
+        meetup_dogs = [];
+        num_dogs_at_meetup = 0.9 * num_dogs;
+        %grab this many dogs at random from the total pool
+        for i = 1:num_dogs_at_meetup
+        [~, ~, meetup_dogs] = ...
+            grab_free_dog(1, num_dogs, meetup_dogs, meetup_dogs);
+        end
+
+        %MEETUP INFECTION EVENTS
+        meetup_inf_prop = get_infected_proportion(meetup_dogs, dogs);
+        if printouts
+            disp("Meetup: Infected Proportion = " + meetup_inf_prop)
+        end
+        dogs = do_infections(dogs, meetup_dogs, inf_const, meetup_inf_prop, printouts);
+    end
+
+    %end of day; do movement from I to R and from E to I
+    for dog_index = 1:num_dogs
+        dog = dogs(dog_index);
+        if dog.infection_status == 'I'
+            if dog.days_infectious == inf_times(dog.index)
+                dog = recovery(dog);
+                dogs(dog_index) = dog;
+                if printouts
+                    disp("EVENT: Dog #" + dog.index + " recovered after " + inf_times(dog.index) + " days infectious!")
+                end
+            else
+                dog = next_infectious_day(dog);
+                dogs(dog_index) = dog;
+            end
+        elseif dog.infection_status == 'E'
+            if dog.days_latent == latent_times(dog.index)
+                dog = become_infectious(dog);
+                dogs(dog_index) = dog;
+                if printouts
+                    disp("EVENT: Dog #" + dog.index + " became infectious after " + latent_times(dog.index) + " days latent!")
+                end
+            else
+                dog = next_latent_day(dog);
+                dogs(dog_index) = dog;
+            end
+        end
+
+    end
+
+
+    if printouts
+        disp(" ")
+    end
+
+    outbreak = false;
+    for dog_index = 1:num_dogs
+        S = dogs(dog_index).infection_status;
+        if  S == 'I' || S == 'E'
+            outbreak = true;
+        end
+    end
+    
+    if ~outbreak
+        
+        % disp("Outbreak is over!")
+        outbreak_num = 0;
+        for dog_index = 1:num_dogs
+            if dogs(dog_index).infection_status == 'R'
+                outbreak_num = outbreak_num + 1;
+            end
+        end
+
+        outbreak_size = outbreak_num / num_dogs;
+
+        if printouts
+            disp("Final outbreak size = " + outbreak_num + "/" + num_dogs + " dogs, " + outbreak_size * 100 + "%")
+        end
+        outbreak_length = day;
+        break
+
+    end
+    
+end
+
+
+
+
+end
+
