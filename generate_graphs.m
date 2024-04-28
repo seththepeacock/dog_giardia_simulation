@@ -59,6 +59,8 @@ title('Mean Lengths of Outbreak')
 xlabel('Infectivity Constant')
 ylabel('Mean Outbreak Length (Days)')
 legend("Control", "No Playdates", "No Meetings")
+ticks = 0:0.05:1;
+xticks(ticks)
 
 saveas(1, "meanLengths.jpg")
 
@@ -69,6 +71,7 @@ title('Variance of Outbreak Length')
 xlabel('Infectivity Constant')
 ylabel('Variance of Lengths of Outbreak')
 legend("Control", "No Playdates", "No Meetings")
+xticks(ticks)
 
 saveas(2, "varLengths.jpg")
 
@@ -80,6 +83,7 @@ title('Mean Sizes of Outbreak')
 xlabel('Infectivity Constant')
 ylabel('Mean Outbreak Size (Proportion)')
 legend("Control", "No Playdates", "No Meetings")
+xticks(ticks)
 
 saveas(3, "meanSizes.jpg")
 
@@ -90,6 +94,7 @@ title('Variance of Outbreak Size')
 xlabel('Infectivity Constant')
 ylabel('Variance')
 legend("Control", "No Playdates", "No Meetings")
+xticks(ticks)
 
 saveas(4, "varSizes.jpg")
 
